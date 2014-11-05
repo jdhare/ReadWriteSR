@@ -37,8 +37,13 @@
 void SRCLK(void);
 void OutCLK(void);
 void InCLK(void);
-unsigned int read_byte(void);
-void write(unsigned int o0,unsigned int o1,unsigned int o2);
+unsigned char read_byte(void);
+void write(unsigned char o0,unsigned char o1,unsigned char o2);
+void output(unsigned char d0,unsigned char d1,unsigned char d2);
+
+//global variables to be used by the automatic recirculator
+unsigned char cur_bank=0b10000000; //0:G, 1:H,2:C,3:Z start with groucho
+unsigned long time_recircd=0; //max size is 2^32 2,147,483,647
 
 void main(void)
 {
@@ -48,7 +53,7 @@ void main(void)
 
 
     //three bytes to hold input data
-    unsigned int d0,d1,d2;
+    unsigned char d0,d1,d2;
 
     while(1){
 
@@ -59,16 +64,7 @@ void main(void)
         d1=read_byte();
         d2=read_byte();
 
-        PORTBbits.RB6=1;
-        __delay_ms(50);
-        PORTBbits.RB6=0;
-
-
-
-        //write three bytes i
-        write(d0,d1,d2);
-        OutCLK();
-
+        output(d0,d1,d2);
     }
 
 
@@ -101,10 +97,10 @@ void InCLK(void)
     __delay_us(100);
 }
 
-void write(unsigned int o0,unsigned int o1,unsigned int o2)
+void write(unsigned char o0,unsigned char o1,unsigned char o2)
 {
-    unsigned int mask=0b1;
-    unsigned write_bit;
+    unsigned char mask=0b1;
+    unsigned char write_bit;
     int i;
 
     for(i=0;i<8;i++)
@@ -136,23 +132,110 @@ void write(unsigned int o0,unsigned int o1,unsigned int o2)
 
 }
 
-unsigned int read_byte(void)
+unsigned char read_byte(void)
 {
-    unsigned int read_bit;
-    unsigned char input=1;
+    unsigned char read_bit;
+    unsigned char input=0;
     int i=0;
+    unsigned char mask=0b1;
 
     for(i=0;i<8;i++){
-        read_bit=PORTBbits.RB5;        
+        //clock data onto pin
+        //read digital value on pin
+        read_bit=PORTBbits.RB5; 
+        //pins held high, so invert
+        read_bit=~read_bit;
+        //get rid of the rest of the bits
+        read_bit=read_bit&mask;
+        //add the bit in
         input=input+read_bit;
+        //shift it along ready for the next bit
         input=input << 1;
         SRCLK();
     }
     //undo final shift
     input=input >> 1;
 
-    input=~input;
     
     return input;
 }
 
+/*expected structure of input bytes:
+ * d0: GHCZ marx switch fill, GHCZ line switch fill
+ * d1: GHCZ marx switch dump, GHCZ line switch dump
+ * d2: GHCZ recirculator, recirculator on/off, recirculator auto/manual, final two unused
+ * o0: GHCZ marx fill valve, GHCZ line switch fill valve
+ * o1: GHCZ marx dump valve, GHCZ line empty valve
+ * o2: bottle, dump, recirculator in, recirculator out, final four unused
+ * 
+ */
+void output(unsigned char d0,unsigned char d1,unsigned char d2)
+{
+    unsigned char o0,o1,o2;
+    //if recirculator is on
+    if(d2&0b00001000){
+        //if recirculator on manual
+        if(d2&0b00000100==0){
+            //open one bank for filling
+            o0=d0&0b11110000;
+            //and the same bank for emptying
+            o1=o0;
+            //open recirculator in and out
+            o2=0b00110000;
+        }
+        //explicit check recirculator on automatic
+        else if(d2&0b00000100){
+            //open one bank for filling
+            o0=cur_bank&0b11110000;
+            //and the same bank for emptying
+            o1=o0;
+            //open recirculator in and out
+            o2=0b00110000;
+            //run the recirculator for at least a second
+            __delay_ms(1000);
+            time_recircd++;
+            //if current bank has been recirculated for 5 mins, switch to the next bank
+            if(time_recircd>300){
+                if(cur_bank==0b10000000){
+                    cur_bank=0b01000000;
+                }
+                else if(cur_bank==0b01000000){
+                    cur_bank=0b00100000;
+                }
+                else if(cur_bank==0b00100000){
+                    cur_bank=0b00010000;
+                }
+                else if(cur_bank==0b00010000){
+                    cur_bank=0b10000000;
+                }
+            }
+        }
+    }
+    //explicit check that the recirculator is off
+    else if(d2&0b00001000==0){
+        //open the appropriate valves for filling
+        o0=d0;
+        //open the appropriate valves for dumping
+        o1=d1;
+        //if any fill bit set AND any dump bit set
+        if(d0!=0&&d1!=0){
+            o2=0b11000000;
+        }
+        //if any dump bit set AND no fill bit set
+        if(d0==0&d1!=0){
+            o2=0b01000000;
+        }
+        //if any fill bit set AND no dump bit set
+        if(d0!=0&d1==0){
+            o2=0b10000000;
+        }
+    }
+    
+
+    //write three bytes i
+    write(o0,o1,o2);
+    //clock the data held on the output latches to the pins in parallel.
+    OutCLK();
+
+    return;
+}
