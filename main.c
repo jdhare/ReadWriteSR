@@ -43,7 +43,7 @@ void output(unsigned char d0,unsigned char d1,unsigned char d2);
 
 //global variables to be used by the automatic recirculator
 unsigned char cur_bank=0b10000000; //0:G, 1:H,2:C,3:Z start with groucho
-unsigned long time_recircd=0; //max size is 2^32 2,147,483,647
+unsigned int time_recircd=0; 
 
 void main(void)
 {
@@ -134,7 +134,7 @@ void write(unsigned char o0,unsigned char o1,unsigned char o2)
 
 unsigned char read_byte(void)
 {
-    unsigned char read_bit;
+    unsigned char read_bit=1;
     unsigned char input=0;
     int i=0;
     unsigned char mask=0b1;
@@ -172,19 +172,21 @@ unsigned char read_byte(void)
 void output(unsigned char d0,unsigned char d1,unsigned char d2)
 {
     unsigned char o0,o1,o2;
+    bool recirc_on=d2&0b00001000;
+    bool recirc_auto=d2&0b00000100;
     //if recirculator is on
-    if(d2&0b00001000){
+    if(recirc_on){
         //if recirculator on manual
-        if(d2&0b00000100==0){
+        if(recirc_auto==0){
             //open one bank for filling
-            o0=d0&0b11110000;
+            o0=d2&0b11110000;
             //and the same bank for emptying
             o1=o0;
             //open recirculator in and out
             o2=0b00110000;
         }
         //explicit check recirculator on automatic
-        else if(d2&0b00000100){
+        else if(recirc_auto){
             //open one bank for filling
             o0=cur_bank&0b11110000;
             //and the same bank for emptying
@@ -195,24 +197,28 @@ void output(unsigned char d0,unsigned char d1,unsigned char d2)
             __delay_ms(1000);
             time_recircd++;
             //if current bank has been recirculated for 5 mins, switch to the next bank
-            if(time_recircd>300){
+            if(time_recircd>10){
                 if(cur_bank==0b10000000){
                     cur_bank=0b01000000;
+                    time_recircd=0;
                 }
                 else if(cur_bank==0b01000000){
                     cur_bank=0b00100000;
+                    time_recircd=0;
                 }
                 else if(cur_bank==0b00100000){
                     cur_bank=0b00010000;
+                    time_recircd=0;
                 }
                 else if(cur_bank==0b00010000){
                     cur_bank=0b10000000;
+                    time_recircd=0;
                 }
             }
         }
     }
     //explicit check that the recirculator is off
-    else if(d2&0b00001000==0){
+    else if(recirc_on==0){
         //open the appropriate valves for filling
         o0=d0;
         //open the appropriate valves for dumping
@@ -222,11 +228,11 @@ void output(unsigned char d0,unsigned char d1,unsigned char d2)
             o2=0b11000000;
         }
         //if any dump bit set AND no fill bit set
-        if(d0==0&d1!=0){
+        if(d0==0&&d1!=0){
             o2=0b01000000;
         }
         //if any fill bit set AND no dump bit set
-        if(d0!=0&d1==0){
+        if(d0!=0&&d1==0){
             o2=0b10000000;
         }
     }
