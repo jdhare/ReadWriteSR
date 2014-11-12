@@ -172,6 +172,7 @@ unsigned char read_byte(void)
 void output(unsigned char d0,unsigned char d1,unsigned char d2)
 {
     unsigned char o0,o1,o2;
+    __delay_us(1);
     bool recirc_on=d2&0b00001000;
     bool recirc_auto=d2&0b00000100;
     //if recirculator is on
@@ -235,10 +236,15 @@ void output(unsigned char d0,unsigned char d1,unsigned char d2)
         if(d0!=0&&d1==0){
             o2=0b10000000;
         }
+         //if no fill bit set AND no dump bit set DO NOTHING
+        if(d0==0&&d1==0){
+            o2=0b00000000;
+        }
     }
     
 
     //write three bytes i
+    __delay_us(1);
     write(o0,o1,o2);
     //clock the data held on the output latches to the pins in parallel.
     OutCLK();
