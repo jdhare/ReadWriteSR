@@ -1,12 +1,12 @@
-_SRCLK: CODE, 480 0 13
-_OutCLK: CODE, 467 0 13
-_ConfigureOscillator: CODE, 493 0 6
-_main: CODE, 393 0 43
-_output: CODE, 28 0 165
-_InitApp: CODE, 452 0 15
+_SRCLK: CODE, 499 0 13
+_OutCLK: CODE, 486 0 13
+_ConfigureOscillator: CODE, 512 0 6
+_main: CODE, 412 0 43
+_output: CODE, 28 0 171
+_InitApp: CODE, 471 0 15
 __initialization: CODE, 15 0 9
-_InCLK: CODE, 436 0 16
-_read_byte: CODE, 331 0 62
+_InCLK: CODE, 455 0 16
+_read_byte: CODE, 337 0 75
 _isr: CODE, 4 0 9
-_write: CODE, 193 0 138
-Total: 489
+_write: CODE, 199 0 138
+Total: 508

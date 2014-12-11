@@ -19,7 +19,9 @@
 /* User Global Variable Declaration                                           */
 /******************************************************************************/
 
-/* i.e. uint8_t <variable_name>; */
+//global variables to be used by the automatic recirculator
+unsigned char cur_bank=0b10000000; //0:G, 1:H,2:C,3:Z start with groucho
+unsigned int time_recircd=0;
 
 
 
@@ -41,18 +43,17 @@ unsigned char read_byte(void);
 void write(unsigned char o0,unsigned char o1,unsigned char o2);
 void output(unsigned char d0,unsigned char d1,unsigned char d2);
 
-//global variables to be used by the automatic recirculator
-unsigned char cur_bank=0b10000000; //0:G, 1:H,2:C,3:Z start with groucho
-unsigned int time_recircd=0; 
-
 void main(void)
 {
-
+    //standard function calls to get the PIC ready
     ConfigureOscillator();
     InitApp();
 
 
     //three bytes to hold input data
+    //d0: GHCZ marx fill, GHCZ line fill
+    //d1: GHCZ marx dump, GHCZ line dump
+    //d2: GHCZ recirc select, recirc on/off recirc auto/manual
     unsigned char d0,d1,d2;
 
     while(1){
@@ -63,7 +64,7 @@ void main(void)
         d0=read_byte();
         d1=read_byte();
         d2=read_byte();
-
+        //process input data and place on output shift registers
         output(d0,d1,d2);
     }
 
@@ -71,7 +72,7 @@ void main(void)
 return;
 }
 
-
+//common shift register clock to move serial data aalong.
 void SRCLK(void)
 {
     PORTCbits.RC4=1;
@@ -80,6 +81,7 @@ void SRCLK(void)
     __delay_us(100);
 }
 
+//clock to place data from internal latches onto outputs
 void OutCLK(void)
 {
     PORTAbits.RA5=1;
@@ -88,6 +90,7 @@ void OutCLK(void)
     __delay_us(100);
 }
 
+//clock to place data from inputs to internal latches
 void InCLK(void)
 {
     PORTBbits.RB7=0;
@@ -97,18 +100,27 @@ void InCLK(void)
     __delay_us(100);
 }
 
+//write three bytes onto output shift register
 void write(unsigned char o0,unsigned char o1,unsigned char o2)
 {
+    //mask ensures we only select one bit to write at a time
     unsigned char mask=0b1;
+    //make really sure we only write the right thing
     unsigned char write_bit;
     int i;
 
+    //loop for each byte.
     for(i=0;i<8;i++)
     {
+        //select the least significant bit
         write_bit=o0 & mask;
+        //place that bit on the serial in
         PORTCbits.RC5 = write_bit;
         __delay_us(10);
+        //clock the bit along the intenral latches
         SRCLK();
+        //shift the byte right so the next least significant bit is the least
+        //significant bit and the former least siginficant bit is discarded
         o0 = o0 >> 1;
     }
 
@@ -134,8 +146,9 @@ void write(unsigned char o0,unsigned char o1,unsigned char o2)
 
 unsigned char read_byte(void)
 {
+    //initial read_bit is 1 as switches are pull down.
     unsigned char read_bit=1;
-    unsigned char input=0;
+    unsigned int input=0;
     int i=0;
     unsigned char mask=0b1;
 
@@ -145,19 +158,22 @@ unsigned char read_byte(void)
         read_bit=PORTBbits.RB5; 
         //pins held high, so invert
         read_bit=~read_bit;
-        //get rid of the rest of the bits
+        //get rid of the rest of the bits just in case
         read_bit=read_bit&mask;
-        //add the bit in
+        //place the read_bit in the least siginificant bit of the input byte
         input=input+read_bit;
-        //shift it along ready for the next bit
+        //shift it left, ready for the next bit
         input=input << 1;
         SRCLK();
     }
-    //undo final shift
+    //undo final shift (this is why we use an int, not a char, so we don't lose
+    //the most significant bit in the final bit shift
     input=input >> 1;
 
+    //make sure we just use chars to ensure everything is truly only 1 byte.
+    unsigned char input_char=input;
     
-    return input;
+    return input_char;
 }
 
 /*expected structure of input bytes:
@@ -172,7 +188,7 @@ unsigned char read_byte(void)
 void output(unsigned char d0,unsigned char d1,unsigned char d2)
 {
     unsigned char o0,o1,o2;
-    __delay_us(1);
+    //byte masks to find whether the recirculator is on, or on automatic
     bool recirc_on=d2&0b00001000;
     bool recirc_auto=d2&0b00000100;
     //if recirculator is on
@@ -198,7 +214,7 @@ void output(unsigned char d0,unsigned char d1,unsigned char d2)
             __delay_ms(1000);
             time_recircd++;
             //if current bank has been recirculated for 5 mins, switch to the next bank
-            if(time_recircd>10){
+            if(time_recircd>300){
                 if(cur_bank==0b10000000){
                     cur_bank=0b01000000;
                     time_recircd=0;
