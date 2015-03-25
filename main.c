@@ -176,18 +176,9 @@ unsigned char read_byte(void)
     return input_char;
 }
 
-/*expected structure of input bytes:
- * d0: GHCZ marx switch fill, GHCZ line switch fill
- * d1: GHCZ marx switch dump, GHCZ line switch dump
- * d2: GHCZ recirculator, recirculator on/off, recirculator auto/manual, final two unused
- * o0: GHCZ marx fill valve, GHCZ line switch fill valve
- * o1: GHCZ marx dump valve, GHCZ line empty valve
- * o2: bottle, dump, recirculator in, recirculator out, final four unused
- * 
- */
-void output(unsigned char d0,unsigned char d1,unsigned char d2)
+void smart(unsigned char d0,unsigned char d1,unsigned char d2, unsigned char* o0,unsigned char* o1, unsigned char* o2)
 {
-    unsigned char o0,o1,o2;
+
     //byte masks to find whether the recirculator is on, or on automatic
     bool recirc_on=d2&0b00001000;
     bool recirc_auto=d2&0b00000100;
@@ -196,20 +187,20 @@ void output(unsigned char d0,unsigned char d1,unsigned char d2)
         //if recirculator on manual
         if(recirc_auto==0){
             //open one bank for filling
-            o0=d2&0b11110000;
+            *o0=d2&0b11110000;
             //and the same bank for emptying
-            o1=o0;
+            *o1=o0;
             //open recirculator in and out
-            o2=0b00110000;
+            *o2=0b00110000;
         }
         //explicit check recirculator on automatic
         else if(recirc_auto){
             //open one bank for filling
-            o0=cur_bank&0b11110000;
+            *o0=cur_bank&0b11110000;
             //and the same bank for emptying
-            o1=o0;
+            *o1=o0;
             //open recirculator in and out
-            o2=0b00110000;
+            *o2=0b00110000;
             //run the recirculator for at least a second
             __delay_ms(1000);
             time_recircd++;
@@ -237,27 +228,79 @@ void output(unsigned char d0,unsigned char d1,unsigned char d2)
     //explicit check that the recirculator is off
     else if(recirc_on==0){
         //open the appropriate valves for filling
-        o0=d0;
+        *o0=d0;
         //open the appropriate valves for dumping
-        o1=d1;
+        *o1=d1;
         //if any fill bit set AND any dump bit set
         if(d0!=0&&d1!=0){
-            o2=0b11000000;
+            *o2=0b11000000;
         }
         //if any dump bit set AND no fill bit set
         if(d0==0&&d1!=0){
-            o2=0b01000000;
+            *o2=0b01000000;
         }
         //if any fill bit set AND no dump bit set
         if(d0!=0&&d1==0){
-            o2=0b10000000;
+            *o2=0b10000000;
         }
          //if no fill bit set AND no dump bit set DO NOTHING
         if(d0==0&&d1==0){
-            o2=0b00000000;
+            *o2=0b00000000;
         }
     }
-    
+
+}
+
+void dumb(unsigned char d0,unsigned char d1,unsigned char d2, unsigned char* o0,unsigned char* o1, unsigned char* o2)
+{
+    unsigned char o2_temp=0b00000000
+    //open the appropriate valves for filling
+    *o0=d0;
+    //open the appropriate valves for dumping
+    *o1=d1;
+    //calculate the two independent switches
+    if (d2&0b00001000){//bottle set to open
+        o2_temp+=0b10000000;
+    }
+    if (d2&0b00000100){//dump set yo open
+        o2_temp+=0b10000000;
+    }
+    //these are selected from a four way selector
+    //so only one can be true at a time
+    //fortunately
+    if (d2&0b10000000){//recirc in and out open
+        o2_temp+=0b00110000;
+    }
+    if (d2&0b01000000){//recirc in open
+        o2_temp+=0b00100000;
+    }
+    if (d2&0b00100000){//recirc dump open
+        o2_temp+=0b00010000;
+    }
+    *o2=o2_temp;
+}
+
+/*expected structure of input bytes:
+ * d0: GHCZ marx switch fill, GHCZ line switch fill
+ * d1: GHCZ marx switch dump, GHCZ line switch dump
+ * d2: GHCZ recirculator, recirculator on/off, recirculator auto/manual, final two unused
+ * o0: GHCZ marx fill valve, GHCZ line switch fill valve
+ * o1: GHCZ marx dump valve, GHCZ line empty valve
+ * o2: bottle, dump, recirculator in, recirculator out, final four unused
+ * 
+ */
+void output(unsigned char d0,unsigned char d1,unsigned char d2)
+{
+     unsigned char o0,o1,o2;
+    //byte masks to find whether the recirculator is in dumb or smart mode
+    bool recirc_smart=d2&0b00000010;
+    //if recirculator is smart
+    if (recirc_smart){
+        smart(d0,d1,d2,&o0,&o1,&o2);
+    }
+    else if (recirc_smart==0){
+        dumb(d0,d1,d2,&o0,&o1,&o2);
+    }
 
     //write three bytes i
     __delay_us(1);
